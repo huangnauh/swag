@@ -71,7 +71,7 @@ devel-deps: ensure-gopath
 ensure-gopath:
 	mkdir -p ${GOPATH}/src/github.com/swaggo
 	if [ -L ${GOPATH}/src/github.com/swaggo/swag ]; then rm ${GOPATH}/src/github.com/swaggo/swag; fi
-	ln -s "$(shell pwd)"  ${GOPATH}/src/github.com/swaggo/swag
+	ln -s "$(shell pwd)"  ${GOPATH}/src/github.com/swaggo
 
 .PHONY: lint
 lint: devel-deps
