@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"net/http"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -174,7 +175,49 @@ func (operation *Operation) ParseParamComment(commentLine string, astFile *ast.F
 				},
 			}
 		case "object":
-			return fmt.Errorf("%s is not supported type for %s", refType, paramType)
+			if err := operation.registerSchemaType(refType, astFile); err != nil {
+				return err
+			}
+			typeSpec := operation.parser.registerTypes[refType]
+			expr, ok := typeSpec.Type.(*ast.StructType)
+			if !ok {
+				return fmt.Errorf("%s is not supported type for %s", refType, paramType)
+			} else {
+				if len(expr.Fields.List) == 0 {
+					return fmt.Errorf("%s is not supported type for %s", refType, paramType)
+				}
+				for _, field := range expr.Fields.List {
+					ident, ok := field.Type.(*ast.Ident)
+					if !ok {
+						return fmt.Errorf("%s is not supported type for %s in %s",
+							refType, field.Type, paramType)
+					}
+
+					structTag := reflect.StructTag(strings.Replace(field.Tag.Value, "`", "", -1))
+					formTag := structTag.Get("form")
+					formTag = strings.Split(formTag, ",")[0]
+					isRequired := false
+					if bindingTag := structTag.Get("binding"); bindingTag != "" {
+						for _, val := range strings.Split(bindingTag, ",") {
+							if val == "required" {
+								isRequired = true
+								break
+							}
+						}
+					}
+					if validateTag := structTag.Get("validate"); validateTag != "" {
+						for _, val := range strings.Split(validateTag, ",") {
+							if val == "required" {
+								isRequired = true
+								break
+							}
+						}
+					}
+					param = createParameter(paramType, formTag, formTag, ident.Name, isRequired)
+					operation.Operation.Parameters = append(operation.Operation.Parameters, param)
+				}
+				return nil
+			}
 		}
 	case "body":
 		switch objectType {
