@@ -127,6 +127,17 @@ func (operation *Operation) ParseMetadata(attribute, lowerAttribute, lineRemaind
 
 var paramPattern = regexp.MustCompile(`(\S+)[\s]+([\w]+)[\s]+([\S.]+)[\s]+([\w]+)[\s]+"([^"]+)"`)
 
+func getIdent(expr ast.Expr) (*ast.Ident, bool) {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t, true
+	case *ast.StarExpr:
+		return getIdent(t.X)
+	default:
+		return nil, false
+	}
+}
+
 // ParseParamComment parses params return []string of param properties
 // E.g. @Param	queryText		formData	      string	  true		        "The email for login"
 //              [param name]    [paramType] [data type]  [is mandatory?]   [Comment]
@@ -186,21 +197,26 @@ func (operation *Operation) ParseParamComment(commentLine string, astFile *ast.F
 				if len(expr.Fields.List) == 0 {
 					return fmt.Errorf("%s is not supported type for %s", refType, paramType)
 				}
+				var ident *ast.Ident
 				for _, field := range expr.Fields.List {
-					ident, ok := field.Type.(*ast.Ident)
+					ident, ok = getIdent(field.Type)
 					if !ok {
-						return fmt.Errorf("%s is not supported type for %s in %s",
+						return fmt.Errorf("%s is not supported type for %T in %s",
 							refType, field.Type, paramType)
 					}
 
 					structTag := reflect.StructTag(strings.Replace(field.Tag.Value, "`", "", -1))
 					formTag := structTag.Get("form")
-					formTag = strings.Split(formTag, ",")[0]
+					if formTag == "" {
+						return fmt.Errorf("%s in %s missing 'form' tag",
+							field.Names, refType)
+					}
+					formTag = strings.SplitN(formTag, ",", 2)[0]
 					isRequired := false
 					if bindingTag := structTag.Get("binding"); bindingTag != "" {
 						for _, val := range strings.Split(bindingTag, ",") {
 							if val == "required" {
-								isRequired = true
+								isRequired = required
 								break
 							}
 						}
@@ -208,7 +224,7 @@ func (operation *Operation) ParseParamComment(commentLine string, astFile *ast.F
 					if validateTag := structTag.Get("validate"); validateTag != "" {
 						for _, val := range strings.Split(validateTag, ",") {
 							if val == "required" {
-								isRequired = true
+								isRequired = required
 								break
 							}
 						}
